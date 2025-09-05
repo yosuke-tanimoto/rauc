@@ -1494,6 +1494,7 @@ gboolean do_install_bundle(RaucInstallArgs *args, GError **error)
 	g_autoptr(RaucBundle) bundle = NULL;
 	g_autoptr(GHashTable) target_group = NULL;
 	g_auto(GStrv) handler_env = NULL;
+	g_autofree gchar *handler_name = NULL;
 
 	g_assert_nonnull(bundlefile);
 	g_assert_null(r_context()->install_info->mounted_bundle);
@@ -1575,6 +1576,16 @@ gboolean do_install_bundle(RaucInstallArgs *args, GError **error)
 		}
 	}
 
+	if (r_context()->install_info->mounted_bundle->manifest->preinstall_handler) {
+		handler_name = g_build_filename(bundle->mount_point, r_context()->install_info->mounted_bundle->manifest->preinstall_handler, NULL);
+		g_message("Starting pre install handler in the manifest: %s", handler_name);
+		res = launch_and_wait_handler(args, handler_name, NULL, handler_env, &ierror);
+		if (!res) {
+			g_propagate_prefixed_error(error, ierror, "Pre-install handler error: ");
+			goto umount;
+		}
+	}
+
 	/* Allow overriding compatible check by hook */
 	if (bundle->manifest->hooks.install_check) {
 		run_bundle_hook(bundle->manifest, bundle->mount_point, "install-check", &ierror);
@@ -1616,6 +1627,16 @@ gboolean do_install_bundle(RaucInstallArgs *args, GError **error)
 	if (!res) {
 		g_propagate_prefixed_error(error, ierror, "Installation error: ");
 		goto umount;
+	}
+
+	if (r_context()->install_info->mounted_bundle->manifest->postinstall_handler) {
+		handler_name = g_build_filename(bundle->mount_point, r_context()->install_info->mounted_bundle->manifest->postinstall_handler, NULL);
+		g_message("Starting post install handler in the manifest: %s", handler_name);
+		res = launch_and_wait_handler(args, handler_name, NULL, handler_env, &ierror);
+		if (!res) {
+			g_propagate_prefixed_error(error, ierror, "Post-install handler error: ");
+			goto umount;
+		}
 	}
 
 	if (r_context()->config->postinstall_handler) {
